@@ -1,6 +1,9 @@
 extends Spatial
 
-export(String) var WADPath
+# v0.1 - Godot script for generate levels from WAD files
+# originally created by Chaosus in 2017
+
+export(String) var WADPath = "e1m1.wad"
 
 export(String) var LevelName = "E1M1"
 
