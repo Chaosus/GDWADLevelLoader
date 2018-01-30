@@ -2,6 +2,9 @@
 WAD level loader-script(from DOOM-alike games) for Godot.
 
 # Current version
+v0.2 - some improvements for future development..
+
+# Previous versions
 v0.1 - present simple line mesh of level without any details, floor height or textures. In future I will add walls, floors, and maybe texture loading support. 
 
 # How to use

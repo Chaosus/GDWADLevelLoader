@@ -1,7 +1,10 @@
 extends Spatial
 
-# v0.1 - Godot script for generate levels from WAD files
-# originally created by Chaosus in 2017
+# v0.2 - Godot 3 script for generate levels from WAD files
+# originally created by Chaosus in 2017-2018
+
+# If you want to extend this script for your purposes, read
+# http://www.gamers.org/dhs/helpdocs/dmsp1666.html 
 
 export(String) var WADPath = "e1m1.wad"
 
@@ -19,6 +22,7 @@ func decode_32_as_string(file):
 	var c3 = char(file.get_8())
 	var c4 = char(file.get_8())
 	return c1 + c2 + c3 + c4
+
 
 func decode_64_as_string(file):
 	var c1 = char(file.get_8())
@@ -62,6 +66,37 @@ class Segment:
 	var direction
 	var offset
 
+class SubSector:
+	var seg_count
+	var seg_num
+
+class Node:
+	var x
+	var y
+	var dx
+	var dy
+	var y_upper_right
+	var y_lower_right
+	var x_lower_right
+	var x_upper_right
+	var y_upper_left
+	var y_lower_left
+	var x_lower_left
+	var x_upper_left
+	var node_right
+	var node_left
+
+class Sector:
+	var floor_height
+	var ceil_height
+	var floor_texture
+	var ceil_texture
+	var light_level
+	var special
+	var tag
+
+
+
 func read_lump(file):
 	var lump = Lump.new()
 	lump.offset = file.get_32()
@@ -70,8 +105,11 @@ func read_lump(file):
 	return lump
  
 func combine_bytes(a, b):
-	return (b << 8) | (a & 0xff)
+	return wrapi((b << 8) | (a & 0xff), -32768, 32768)
 
+func combine_8_bytes_tostring(c1, c2, c3, c4, c5, c6, c7, c8):
+	return char(c1) + char(c2) + char(c3) + char(c4) + char(c5) + char(c6) + char(c7) + char(c8)
+	
 func _ready():
 	var buffer
 	var i
@@ -97,6 +135,7 @@ func _ready():
 	if PrintDebugInfo:
 		print("READING LUMPS...")
 	
+	var lump_mapname
 	var lump_things
 	var lump_linedefs
 	var lump_sidedefs
@@ -108,10 +147,14 @@ func _ready():
 	var lump_reject
 	var lump_blockmap
 	
+	var first = true
 	var breakAfter = false
 	file.seek(header.dirOffset)
 	for i in range(header.lumpNum):
 		var lump = read_lump(file)
+		if first:
+			lump_mapname = lump
+			first = false
 		match lump.name:
 			"THINGS":
 				lump_things = lump
@@ -139,21 +182,22 @@ func _ready():
 				breakAfter = true
 					
 	if PrintDebugInfo:
+		print("Internal map name: " + lump_mapname.name)
 		print("READING VERTEXES...")
 	file.seek(lump_vertexes.offset)
 	var vertexes = []
 	buffer = file.get_buffer(lump_vertexes.size)
 	i = 0
 	while i < buffer.size():
-		var x = wrapi(combine_bytes(buffer[i], buffer[i+1]), -32768, 32768) * Scale
-		var y = wrapi(combine_bytes(buffer[i+2], buffer[i+3]), -32768, 32768) * Scale
+		var x = combine_bytes(buffer[i], buffer[i+1]) * Scale
+		var y = combine_bytes(buffer[i+2], buffer[i+3]) * Scale
 		var vertex = Vertex.new()
 		vertex.x = float(x)
 		vertex.y = float(y)	
 		vertexes.push_back(vertex)
 		i+=4
-	if PrintDebugInfo:		
-		print("READING LINEDEFS...")	
+	if PrintDebugInfo:
+		print("READING LINEDEFS...")
 	file.seek(lump_linedefs.offset)
 	var linedefs = []
 	buffer = file.get_buffer(lump_linedefs.size)
@@ -170,9 +214,63 @@ func _ready():
 		linedefs.push_back(linedef)
 		i+=14
 	
+	if PrintDebugInfo:
+		print("READING SUB-SECTORS...")
+	file.seek(lump_ssectors.offset)
+	var sub_sectors = []
+	buffer = file.get_buffer(lump_ssectors.size)
+	i = 0
+	while i < buffer.size():
+		var subsector = SubSector.new()
+		subsector.seg_count = combine_bytes(buffer[i],buffer[i+1])
+		subsector.seg_num = combine_bytes(buffer[i+2],buffer[i+3])
+		sub_sectors.push_back(subsector)
+		i+=4
+	
+	if PrintDebugInfo:
+		print("READING NODES...")
+	file.seek(lump_nodes.offset)
+	var nodes = []
+	buffer = file.get_buffer(lump_nodes.size)
+	i = 0
+	while i < buffer.size():
+		var node = Node.new()
+		node.x = combine_bytes(buffer[i],buffer[i+1])
+		node.y = combine_bytes(buffer[i+2],buffer[i+3])
+		node.dx = combine_bytes(buffer[i+4],buffer[i+5])
+		node.dy = combine_bytes(buffer[i+6],buffer[i+7])		
+		node.y_upper_right = combine_bytes(buffer[i+8],buffer[i+9])
+		node.y_lower_right = combine_bytes(buffer[i+10],buffer[i+11])
+		node.x_lower_right = combine_bytes(buffer[i+12],buffer[i+13])
+		node.x_upper_right = combine_bytes(buffer[i+14],buffer[i+15])
+		node.y_upper_left = combine_bytes(buffer[i+16],buffer[i+17])
+		node.y_lower_left = combine_bytes(buffer[i+18],buffer[i+19])
+		node.x_lower_left = combine_bytes(buffer[i+20],buffer[i+21])
+		node.x_upper_left = combine_bytes(buffer[i+22],buffer[i+23])
+		node.node_right = combine_bytes(buffer[i+24],buffer[i+25])
+		node.node_left = combine_bytes(buffer[i+26],buffer[i+27])
+		nodes.push_back(node)
+		i+=28
+	
+	if PrintDebugInfo:
+		print("READING SECTORS...")
+	file.seek(lump_sectors.offset)
+	var sectors = []
+	buffer = file.get_buffer(lump_sectors.size)
+	i = 0
+	while i < buffer.size():
+		var sector = Sector.new()
+		sector.floor_height = combine_bytes(buffer[i],buffer[i+1])
+		sector.ceil_height = combine_bytes(buffer[i+2],buffer[i+3])
+		sector.floor_texture = combine_8_bytes_tostring(buffer[i+4], buffer[i+5], buffer[i+6], buffer[i+7], buffer[i+8], buffer[i+9], buffer[i+10], buffer[i+11])
+		sector.ceil_texture = combine_8_bytes_tostring(buffer[i+12], buffer[i+13], buffer[i+14], buffer[i+15], buffer[i+16], buffer[i+17], buffer[i+18], buffer[i+19])
+		sector.light_level = combine_bytes(buffer[i+20], buffer[i+21])
+		sector.special = combine_bytes(buffer[i+22], buffer[i+23])
+		sector.tag = combine_bytes(buffer[i+24], buffer[i+25])
+		sectors.push_back(sector)
+		i+=26
 	file.close()
 	
-	i = 0
 	if PrintDebugInfo:
 		print("BUILDING GEOMETRY")
 	for ld in linedefs:
@@ -186,4 +284,13 @@ func _ready():
 		geometry.add_vertex(Vector3(vertex2.x,0,vertex2.y))
 		geometry.end()
 		add_child(geometry)
-		i+=1
+#	for s in sectors:
+#		var ld = linedefs[s.tag]
+#		var vertex1 = vertexes[ld.start_vertex]
+#		var vertex2 = vertexes[ld.end_vertex]
+#		geometry.begin(Mesh.PRIMITIVE_LINES)
+#		geometry.add_vertex(Vector3(vertex1.x,0,vertex1.y))
+#		geometry.add_vertex(Vector3(vertex2.x,0,vertex2.y))
+#		geometry.end()
+#		add_child(geometry)
+		
