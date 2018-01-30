@@ -4,7 +4,7 @@ extends Spatial
 # originally created by Chaosus in 2017-2018
 
 # If you want to extend this script for your purposes, read
-# http://www.gamers.org/dhs/helpdocs/dmsp1666.html 
+# http://www.gamers.org/dhs/helpdocs/dmsp1666.html
 
 export(String) var WADPath = "e1m1.wad"
 
@@ -22,7 +22,6 @@ func decode_32_as_string(file):
 	var c3 = char(file.get_8())
 	var c4 = char(file.get_8())
 	return c1 + c2 + c3 + c4
-
 
 func decode_64_as_string(file):
 	var c1 = char(file.get_8())
@@ -44,6 +43,13 @@ class Lump:
 	var offset
 	var size
 	var name
+
+class Thing:
+	var x
+	var y
+	var angle
+	var type
+	var options
 	
 class Vertex:
 	var x
@@ -95,8 +101,6 @@ class Sector:
 	var special
 	var tag
 
-
-
 func read_lump(file):
 	var lump = Lump.new()
 	lump.offset = file.get_32()
@@ -104,25 +108,22 @@ func read_lump(file):
 	lump.name = decode_64_as_string(file)
 	return lump
  
-func combine_bytes(a, b):
+# combine two bytes to short
+func to_short(a, b):
 	return wrapi((b << 8) | (a & 0xff), -32768, 32768)
 
-func combine_8_bytes_tostring(c1, c2, c3, c4, c5, c6, c7, c8):
+# combine eight bytes to string
+func combine_8_bytes_to_string(c1, c2, c3, c4, c5, c6, c7, c8):
 	return char(c1) + char(c2) + char(c3) + char(c4) + char(c5) + char(c6) + char(c7) + char(c8)
-	
-func _ready():
+
+func load_wad(wad_path, level_name):
 	var buffer
 	var i
-	
-	if SurfaceMaterial == null:
-		SurfaceMaterial = SpatialMaterial.new()
-		SurfaceMaterial.flags_unshaded = true
-		
-	print("Opening %s" % WADPath + "...")
+	print("Opening %s" % wad_path + "...")
 	
 	var file = File.new() 
 	if file.open(WADPath, File.READ) != OK:
-		print("Failed to open WAD file %s" % WADPath)
+		print("Failed to open WAD file %s" % wad_path)
 		return
 		
 	if PrintDebugInfo:
@@ -131,6 +132,8 @@ func _ready():
 	header.type = decode_32_as_string(file)
 	header.lumpNum = file.get_32()
 	header.dirOffset = file.get_32()
+	
+	print(wad_path," is ", header.type)
 	
 	if PrintDebugInfo:
 		print("READING LUMPS...")
@@ -178,19 +181,35 @@ func _ready():
 				lump_blockmap = lump
 				if breakAfter:
 					break
-			LevelName:
+			level_name:
 				breakAfter = true
-					
 	if PrintDebugInfo:
 		print("Internal map name: " + lump_mapname.name)
+	
+	if PrintDebugInfo:
+		print("READING THINGS...")
+	file.seek(lump_things.offset)
+	var things = []
+	buffer = file.get_buffer(lump_things.size)
+	i = 0
+	while i < buffer.size():
+		var thing = Thing.new()
+		thing.x = to_short(buffer[i], buffer[i+1])
+		thing.y = to_short(buffer[i+2], buffer[i+3])
+		thing.angle = to_short(buffer[i+4], buffer[i+5])
+		thing.type = to_short(buffer[i+6], buffer[i+7])
+		thing.options = to_short(buffer[i+8], buffer[i+9])
+		i+=10
+	
+	if PrintDebugInfo:
 		print("READING VERTEXES...")
 	file.seek(lump_vertexes.offset)
 	var vertexes = []
 	buffer = file.get_buffer(lump_vertexes.size)
 	i = 0
 	while i < buffer.size():
-		var x = combine_bytes(buffer[i], buffer[i+1]) * Scale
-		var y = combine_bytes(buffer[i+2], buffer[i+3]) * Scale
+		var x = to_short(buffer[i], buffer[i+1]) * Scale
+		var y = to_short(buffer[i+2], buffer[i+3]) * Scale
 		var vertex = Vertex.new()
 		vertex.x = float(x)
 		vertex.y = float(y)	
@@ -204,13 +223,13 @@ func _ready():
 	i = 0
 	while i < buffer.size():
 		var linedef = Linedef.new()
-		linedef.start_vertex = combine_bytes(buffer[i],buffer[i+1])
-		linedef.end_vertex = combine_bytes(buffer[i+2],buffer[i+3])
-		linedef.flags = combine_bytes(buffer[i+4],buffer[i+5])
-		linedef.type = combine_bytes(buffer[i+6],buffer[i+7])
-		linedef.trigger = combine_bytes(buffer[i+8],buffer[i+9])
-		linedef.right_sidedef = combine_bytes(buffer[i+10],buffer[i+11])
-		linedef.left_sidedef = combine_bytes(buffer[i+12],buffer[i+13])
+		linedef.start_vertex = to_short(buffer[i],buffer[i+1])
+		linedef.end_vertex = to_short(buffer[i+2],buffer[i+3])
+		linedef.flags = to_short(buffer[i+4],buffer[i+5])
+		linedef.type = to_short(buffer[i+6],buffer[i+7])
+		linedef.trigger = to_short(buffer[i+8],buffer[i+9])
+		linedef.right_sidedef = to_short(buffer[i+10],buffer[i+11])
+		linedef.left_sidedef = to_short(buffer[i+12],buffer[i+13])
 		linedefs.push_back(linedef)
 		i+=14
 	
@@ -222,8 +241,8 @@ func _ready():
 	i = 0
 	while i < buffer.size():
 		var subsector = SubSector.new()
-		subsector.seg_count = combine_bytes(buffer[i],buffer[i+1])
-		subsector.seg_num = combine_bytes(buffer[i+2],buffer[i+3])
+		subsector.seg_count = to_short(buffer[i],buffer[i+1])
+		subsector.seg_num = to_short(buffer[i+2],buffer[i+3])
 		sub_sectors.push_back(subsector)
 		i+=4
 	
@@ -235,20 +254,20 @@ func _ready():
 	i = 0
 	while i < buffer.size():
 		var node = Node.new()
-		node.x = combine_bytes(buffer[i],buffer[i+1])
-		node.y = combine_bytes(buffer[i+2],buffer[i+3])
-		node.dx = combine_bytes(buffer[i+4],buffer[i+5])
-		node.dy = combine_bytes(buffer[i+6],buffer[i+7])		
-		node.y_upper_right = combine_bytes(buffer[i+8],buffer[i+9])
-		node.y_lower_right = combine_bytes(buffer[i+10],buffer[i+11])
-		node.x_lower_right = combine_bytes(buffer[i+12],buffer[i+13])
-		node.x_upper_right = combine_bytes(buffer[i+14],buffer[i+15])
-		node.y_upper_left = combine_bytes(buffer[i+16],buffer[i+17])
-		node.y_lower_left = combine_bytes(buffer[i+18],buffer[i+19])
-		node.x_lower_left = combine_bytes(buffer[i+20],buffer[i+21])
-		node.x_upper_left = combine_bytes(buffer[i+22],buffer[i+23])
-		node.node_right = combine_bytes(buffer[i+24],buffer[i+25])
-		node.node_left = combine_bytes(buffer[i+26],buffer[i+27])
+		node.x = to_short(buffer[i],buffer[i+1])
+		node.y = to_short(buffer[i+2],buffer[i+3])
+		node.dx = to_short(buffer[i+4],buffer[i+5])
+		node.dy = to_short(buffer[i+6],buffer[i+7])		
+		node.y_upper_right = to_short(buffer[i+8],buffer[i+9])
+		node.y_lower_right = to_short(buffer[i+10],buffer[i+11])
+		node.x_lower_right = to_short(buffer[i+12],buffer[i+13])
+		node.x_upper_right = to_short(buffer[i+14],buffer[i+15])
+		node.y_upper_left = to_short(buffer[i+16],buffer[i+17])
+		node.y_lower_left = to_short(buffer[i+18],buffer[i+19])
+		node.x_lower_left = to_short(buffer[i+20],buffer[i+21])
+		node.x_upper_left = to_short(buffer[i+22],buffer[i+23])
+		node.node_right = to_short(buffer[i+24],buffer[i+25])
+		node.node_left = to_short(buffer[i+26],buffer[i+27])
 		nodes.push_back(node)
 		i+=28
 	
@@ -260,13 +279,13 @@ func _ready():
 	i = 0
 	while i < buffer.size():
 		var sector = Sector.new()
-		sector.floor_height = combine_bytes(buffer[i],buffer[i+1])
-		sector.ceil_height = combine_bytes(buffer[i+2],buffer[i+3])
-		sector.floor_texture = combine_8_bytes_tostring(buffer[i+4], buffer[i+5], buffer[i+6], buffer[i+7], buffer[i+8], buffer[i+9], buffer[i+10], buffer[i+11])
-		sector.ceil_texture = combine_8_bytes_tostring(buffer[i+12], buffer[i+13], buffer[i+14], buffer[i+15], buffer[i+16], buffer[i+17], buffer[i+18], buffer[i+19])
-		sector.light_level = combine_bytes(buffer[i+20], buffer[i+21])
-		sector.special = combine_bytes(buffer[i+22], buffer[i+23])
-		sector.tag = combine_bytes(buffer[i+24], buffer[i+25])
+		sector.floor_height = to_short(buffer[i],buffer[i+1])
+		sector.ceil_height = to_short(buffer[i+2],buffer[i+3])
+		sector.floor_texture = combine_8_bytes_to_string(buffer[i+4], buffer[i+5], buffer[i+6], buffer[i+7], buffer[i+8], buffer[i+9], buffer[i+10], buffer[i+11])
+		sector.ceil_texture = combine_8_bytes_to_string(buffer[i+12], buffer[i+13], buffer[i+14], buffer[i+15], buffer[i+16], buffer[i+17], buffer[i+18], buffer[i+19])
+		sector.light_level = to_short(buffer[i+20], buffer[i+21])
+		sector.special = to_short(buffer[i+22], buffer[i+23])
+		sector.tag = to_short(buffer[i+24], buffer[i+25])
 		sectors.push_back(sector)
 		i+=26
 	file.close()
@@ -279,18 +298,18 @@ func _ready():
 		var geometry = ImmediateGeometry.new()
 		geometry.material_override = SurfaceMaterial
 		geometry.begin(Mesh.PRIMITIVE_LINES)
-		geometry.set_color(Color(1,1,1))
+		geometry.set_color(Color(1,0,0))
 		geometry.add_vertex(Vector3(vertex1.x,0,vertex1.y))
 		geometry.add_vertex(Vector3(vertex2.x,0,vertex2.y))
 		geometry.end()
 		add_child(geometry)
-#	for s in sectors:
-#		var ld = linedefs[s.tag]
-#		var vertex1 = vertexes[ld.start_vertex]
-#		var vertex2 = vertexes[ld.end_vertex]
-#		geometry.begin(Mesh.PRIMITIVE_LINES)
-#		geometry.add_vertex(Vector3(vertex1.x,0,vertex1.y))
-#		geometry.add_vertex(Vector3(vertex2.x,0,vertex2.y))
-#		geometry.end()
-#		add_child(geometry)
+	
+func _ready():
+	
+	if SurfaceMaterial == null:
+		SurfaceMaterial = SpatialMaterial.new()
+		SurfaceMaterial.flags_unshaded = true
+		SurfaceMaterial.flags_vertex_lighting = true
+		SurfaceMaterial.vertex_color_use_as_albedo = true
 		
+	load_wad(WADPath, LevelName)
