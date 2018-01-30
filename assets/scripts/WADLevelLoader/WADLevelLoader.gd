@@ -152,7 +152,7 @@ func load_wad(wad_path, level_name):
 	var lump_sidedefs
 	var lump_vertexes
 	var lump_segs
-	var lump_ssectors
+	var lump_subsectors
 	var lump_nodes
 	var lump_sectors
 	var lump_reject
@@ -178,7 +178,7 @@ func load_wad(wad_path, level_name):
 			"SEGS":
 				lump_segs = lump
 			"SSECTORS":
-				lump_ssectors = lump
+				lump_subsectors = lump
 			"NODES":
 				lump_nodes = lump
 			"SECTORS":
@@ -262,9 +262,9 @@ func load_wad(wad_path, level_name):
 	
 	if PrintDebugInfo:
 		print("READING SUB-SECTORS...")
-	file.seek(lump_ssectors.offset)
+	file.seek(lump_subsectors.offset)
 	var sub_sectors = []
-	buffer = file.get_buffer(lump_ssectors.size)
+	buffer = file.get_buffer(lump_subsectors.size)
 	i = 0
 	while i < buffer.size():
 		var subsector = SubSector.new()
@@ -325,7 +325,10 @@ func load_wad(wad_path, level_name):
 		var geometry = ImmediateGeometry.new()
 		geometry.material_override = SurfaceMaterial
 		geometry.begin(Mesh.PRIMITIVE_LINES)
-		geometry.set_color(Color(1,0,0))
+		if ld.type != 0:
+			geometry.set_color(Color(1,1,0))
+		else:
+			geometry.set_color(Color(1,0,0))
 		geometry.add_vertex(Vector3(vertex1.x,0,vertex1.y))
 		geometry.add_vertex(Vector3(vertex2.x,0,vertex2.y))
 		geometry.end()
