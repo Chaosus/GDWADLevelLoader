@@ -50,10 +50,6 @@ class Thing:
 	var angle
 	var type
 	var options
-	
-class Vertex:
-	var x
-	var y
 
 class Linedef:
 	var start_vertex
@@ -64,6 +60,18 @@ class Linedef:
 	var right_sidedef
 	var left_sidedef
 
+class Sidedef:
+	var x_offset
+	var y_offset
+	var upper_texture
+	var lower_texture
+	var middle_texture
+	var sector
+
+class Vertex:
+	var x
+	var y
+	
 class Segment:
 	var from
 	var to
@@ -199,22 +207,9 @@ func load_wad(wad_path, level_name):
 		thing.angle = to_short(buffer[i+4], buffer[i+5])
 		thing.type = to_short(buffer[i+6], buffer[i+7])
 		thing.options = to_short(buffer[i+8], buffer[i+9])
+		things.push_back(thing)
 		i+=10
-	
-	if PrintDebugInfo:
-		print("READING VERTEXES...")
-	file.seek(lump_vertexes.offset)
-	var vertexes = []
-	buffer = file.get_buffer(lump_vertexes.size)
-	i = 0
-	while i < buffer.size():
-		var x = to_short(buffer[i], buffer[i+1]) * Scale
-		var y = to_short(buffer[i+2], buffer[i+3]) * Scale
-		var vertex = Vertex.new()
-		vertex.x = float(x)
-		vertex.y = float(y)	
-		vertexes.push_back(vertex)
-		i+=4
+		
 	if PrintDebugInfo:
 		print("READING LINEDEFS...")
 	file.seek(lump_linedefs.offset)
@@ -232,6 +227,38 @@ func load_wad(wad_path, level_name):
 		linedef.left_sidedef = to_short(buffer[i+12],buffer[i+13])
 		linedefs.push_back(linedef)
 		i+=14
+	
+	if PrintDebugInfo:
+		print("READING SIDEDEFS...")
+	file.seek(lump_sidedefs.offset)
+	var sidedefs = []
+	buffer = file.get_buffer(lump_sidedefs.size)
+	i = 0
+	while i < buffer.size():
+		var sidedef = Sidedef.new()
+		sidedef.x_offset = to_short(buffer[i], buffer[i+1])
+		sidedef.y_offset = to_short(buffer[i+2], buffer[i+3])
+		sidedef.upper_texture = combine_8_bytes_to_string(buffer[i+4], buffer[i+5], buffer[i+6], buffer[i+7], buffer[i+8], buffer[i+9], buffer[i+10], buffer[i+11])
+		sidedef.lower_texture = combine_8_bytes_to_string(buffer[i+12], buffer[i+13], buffer[i+14], buffer[i+15], buffer[i+16], buffer[i+17], buffer[i+18], buffer[i+19])
+		sidedef.middle_texture = combine_8_bytes_to_string(buffer[i+20], buffer[i+21], buffer[i+22], buffer[i+23], buffer[i+24], buffer[i+25], buffer[i+26], buffer[i+27])
+		sidedef.sector = to_short(buffer[i+28], buffer[i+29])
+		sidedefs.push_back(sidedef)
+		i+=30
+		
+	if PrintDebugInfo:
+		print("READING VERTEXES...")
+	file.seek(lump_vertexes.offset)
+	var vertexes = []
+	buffer = file.get_buffer(lump_vertexes.size)
+	i = 0
+	while i < buffer.size():
+		var x = to_short(buffer[i], buffer[i+1]) * Scale
+		var y = to_short(buffer[i+2], buffer[i+3]) * Scale
+		var vertex = Vertex.new()
+		vertex.x = float(x)
+		vertex.y = float(y)	
+		vertexes.push_back(vertex)
+		i+=4
 	
 	if PrintDebugInfo:
 		print("READING SUB-SECTORS...")
