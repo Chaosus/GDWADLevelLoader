@@ -1,7 +1,8 @@
 extends Spatial
 
-# v0.2 - Godot 3 script for generate levels from WAD files
+# v0.2.1 - Godot 3 script for generate levels from WAD files
 # originally created by Chaosus in 2017-2018
+# MIT license
 
 # If you want to extend this script for your purposes, read
 # http://www.gamers.org/dhs/helpdocs/dmsp1666.html
