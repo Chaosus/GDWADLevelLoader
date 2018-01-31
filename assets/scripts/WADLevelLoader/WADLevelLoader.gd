@@ -1,6 +1,6 @@
 extends Spatial
 
-# v0.2.1 - Godot 3 script for generate levels from WAD files
+# 0.3(development release) - Godot 3 script for generate levels from WAD files
 # originally created by Chaosus in 2017-2018
 # MIT license
 
@@ -11,29 +11,13 @@ export(String) var WADPath = "e1m1.wad"
 
 export(String) var LevelName = "E1M1"
 
+export(int, "Map", "Geometry") var Mode = 0
+
 export(float) var Scale = 0.05
 
 export(bool) var PrintDebugInfo = true
 
 var SurfaceMaterial
-
-func decode_32_as_string(file):
-	var c1 = char(file.get_8())
-	var c2 = char(file.get_8())
-	var c3 = char(file.get_8())
-	var c4 = char(file.get_8())
-	return c1 + c2 + c3 + c4
-
-func decode_64_as_string(file):
-	var c1 = char(file.get_8())
-	var c2 = char(file.get_8())
-	var c3 = char(file.get_8())
-	var c4 = char(file.get_8())
-	var c5 = char(file.get_8())
-	var c6 = char(file.get_8())
-	var c7 = char(file.get_8())
-	var c8 = char(file.get_8())
-	return c1 + c2 + c3 + c4 + c5 + c6 + c7 + c8 
 
 class Header:
 	var type
@@ -52,14 +36,27 @@ class Thing:
 	var type
 	var options
 
+enum {
+	LDT_IMPASSIBLE,
+	LDT_BLOCK_MONSTERS,
+	LDT_TWO_SIDED
+	LDT_UPPER_UNPEGGED,
+	LDT_LOWER_UNPEGGED,
+	LDT_SECRET,
+	LDT_BLOCK_SOUND,
+	LDT_NOT_ON_MAP,
+	LDT_ALREADY_ON_MAP,
+	LDT_MAX
+}	
+
 class Linedef:
-	var start_vertex
-	var end_vertex
-	var flags
-	var type
-	var trigger
-	var right_sidedef
-	var left_sidedef
+	var start_vertex = -1
+	var end_vertex = -1
+	var flags = 0
+	var type = 0
+	var trigger = 0
+	var front = -1
+	var back = -1
 
 class Sidedef:
 	var x_offset
@@ -100,15 +97,44 @@ class Node:
 	var x_upper_left
 	var node_right
 	var node_left
-
+	
 class Sector:
-	var floor_height
-	var ceil_height
-	var floor_texture
-	var ceil_texture
-	var light_level
-	var special
-	var tag
+	var floor_height = 0
+	var ceil_height = 128
+	var floor_texture = "FLOOR4_8"
+	var ceil_texture = "CEIL3_5"
+	var light_level = 160
+	var special = 0
+	var tag = 0
+	var faceset_floor
+	var faceset_ceil
+
+class Faceset:
+	var vertices = []
+	var segments = []
+	var texture = null
+	var faces = []
+	var uv = []
+	func _init(p_texture):
+		texture = p_texture
+
+func decode_32_as_string(file):
+	var c1 = char(file.get_8())
+	var c2 = char(file.get_8())
+	var c3 = char(file.get_8())
+	var c4 = char(file.get_8())
+	return c1 + c2 + c3 + c4
+
+func decode_64_as_string(file):
+	var c1 = char(file.get_8())
+	var c2 = char(file.get_8())
+	var c3 = char(file.get_8())
+	var c4 = char(file.get_8())
+	var c5 = char(file.get_8())
+	var c6 = char(file.get_8())
+	var c7 = char(file.get_8())
+	var c8 = char(file.get_8())
+	return c1 + c2 + c3 + c4 + c5 + c6 + c7 + c8
 
 func read_lump(file):
 	var lump = Lump.new()
@@ -125,7 +151,12 @@ func to_short(a, b):
 func combine_8_bytes_to_string(c1, c2, c3, c4, c5, c6, c7, c8):
 	return char(c1) + char(c2) + char(c3) + char(c4) + char(c5) + char(c6) + char(c7) + char(c8)
 
-func load_wad(wad_path, level_name):
+func create_poly(geometry, linedef, side, sector, width, front_lower_left, front_lower_right, front_upper_right, front_upper_left):
+	geometry.begin(Mesh.PRIMITIVE_TRIANGLE_STRIP)
+	geometry.set_color(Color(1,1,1))
+	geometry.end()		
+
+func load_wad(wad_path, level_name, mode):
 	var buffer
 	var i
 	print("Opening %s" % wad_path + "...")
@@ -224,8 +255,8 @@ func load_wad(wad_path, level_name):
 		linedef.flags = to_short(buffer[i+4],buffer[i+5])
 		linedef.type = to_short(buffer[i+6],buffer[i+7])
 		linedef.trigger = to_short(buffer[i+8],buffer[i+9])
-		linedef.right_sidedef = to_short(buffer[i+10],buffer[i+11])
-		linedef.left_sidedef = to_short(buffer[i+12],buffer[i+13])
+		linedef.front = to_short(buffer[i+10],buffer[i+11])
+		linedef.back = to_short(buffer[i+12],buffer[i+13])
 		linedefs.push_back(linedef)
 		i+=14
 	
@@ -314,25 +345,51 @@ func load_wad(wad_path, level_name):
 		sector.light_level = to_short(buffer[i+20], buffer[i+21])
 		sector.special = to_short(buffer[i+22], buffer[i+23])
 		sector.tag = to_short(buffer[i+24], buffer[i+25])
+		sector.faceset_floor = Faceset.new(sector.floor_texture)
+		sector.faceset_ceil = Faceset.new(sector.ceil_texture)
 		sectors.push_back(sector)
 		i+=26
 	file.close()
 	
 	if PrintDebugInfo:
 		print("BUILDING GEOMETRY")
-	for ld in linedefs:
+	i = 1
+	for ld in linedefs:	
+		var geometry = ImmediateGeometry.new()
 		var vertex1 = vertexes[ld.start_vertex]
 		var vertex2 = vertexes[ld.end_vertex]
-		var geometry = ImmediateGeometry.new()
-		geometry.material_override = SurfaceMaterial
-		geometry.begin(Mesh.PRIMITIVE_LINES)
-		if ld.type != 0:
-			geometry.set_color(Color(1,1,0))
-		else:
-			geometry.set_color(Color(1,0,0))
-		geometry.add_vertex(Vector3(vertex1.x,0,vertex1.y))
-		geometry.add_vertex(Vector3(vertex2.x,0,vertex2.y))
-		geometry.end()
+		
+		if mode == 0: # Map mode
+			geometry.material_override = SurfaceMaterial
+			geometry.begin(Mesh.PRIMITIVE_LINES)
+			if ld.type != 0:
+				geometry.set_color(Color(1,1,0))
+			else:
+				geometry.set_color(Color(1,0,0))
+			geometry.add_vertex(Vector3(vertex1.x,0,vertex1.y))
+			geometry.add_vertex(Vector3(vertex2.x,0,vertex2.y))
+			geometry.end()
+			
+		else: # Geometry mode
+		
+			var width = sqrt((vertex1.x-vertex2.x)*(vertex1.x-vertex2.x) + (vertex1.y-vertex2.y)*(vertex1.y-vertex2.y))
+			
+			if ld.front != -1:
+				var side = sidedefs[ld.front]
+				var sector = sectors[side.sector]
+				
+				var front_lower_left = i
+				var front_upper_left = i+1
+				var front_lower_right = i+2
+				var front_upper_right = i+3
+
+				if ld.flags != LDT_TWO_SIDED and side.middle_texture != '-':
+					create_poly(geometry, ld, side, sector, width, 
+					front_lower_left, front_lower_right,
+					front_upper_right, front_upper_left)
+			
+			geometry.material_override = SurfaceMaterial
+			
 		add_child(geometry)
 	
 func _ready():
@@ -342,5 +399,9 @@ func _ready():
 		SurfaceMaterial.flags_unshaded = true
 		SurfaceMaterial.flags_vertex_lighting = true
 		SurfaceMaterial.vertex_color_use_as_albedo = true
-		
-	load_wad(WADPath, LevelName)
+		SurfaceMaterial.params_cull_mode = SurfaceMaterial.CULL_DISABLED
+
+	load_wad(WADPath, LevelName, Mode)
+	
+	if Mode == 1:
+		get_viewport().debug_draw = Viewport.DEBUG_DRAW_WIREFRAME
