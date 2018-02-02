@@ -20,7 +20,15 @@ export(bool) var PrintDebugInfo = true
 
 # CONSTANTS
 
-const SHORT2FLOAT = 1.0 / 64.0
+const PIXELS_PER_UNIT = 64.0
+
+const PIXELS_PER_FLAT = 64.0
+
+const SHORT2FLOAT = 1.0 / PIXELS_PER_UNIT
+
+const SKYTEXNAME = "F_SKY1"
+
+const SHORTMAXVALUE = 32767
 
 # I/O methods
 
@@ -149,6 +157,17 @@ class Sector:
 	var special
 	var tag
 
+# Contains all extracted data
+class Map:
+	var things = []
+	var linedefs = []
+	var sidedefs = []
+	var vertexes = []
+	var segments = []
+	var subsectors = []
+	var nodes = []
+	var sectors = []
+
 # CUSTOM GEOMETRY TYPES
 
 # SIDE TYPE
@@ -165,17 +184,6 @@ enum {
 	FT_CEIL,
 	FT_MAX
 }
-
-# Contains all extracted data
-class Map:
-	var things = []
-	var linedefs = []
-	var sidedefs = []
-	var vertexes = []
-	var segments = []
-	var subsectors = []
-	var nodes = []
-	var sectors = []
 
 class MapObject:
 	var mesh
@@ -201,21 +209,45 @@ class MapWall extends MapObject:
 	var lsides = []
 	var rsides = []
 
+class MapTriangle:
+	var v1
+	var v2
+	var v3
+	var ld1
+	var ld2
+	var ld3
+	var leftside1
+	var leftside2
+	var leftside3
+	var sector
+	func has_ld():
+		return ld1 != -1 || ld2 != -1 || ld3 != -1
+
+class Bounds:
+	var xMin
+	var yMin
+	var xMax
+	var yMax
+
 # VARIABLES
 
 var map = null
 var flats = []
 var walls = []
+var triangles = []
 var map_material
 
 # FUNCTIONS
 
+# <finished>
 func get_flat_index(sector_index, is_ceiling):
 	return sector_index * FT_MAX + (FT_CEIL if is_ceiling else FT_FLOOR)
 
+# <finished>
 func get_flat(sector_index, is_ceiling):
 	return flats[get_flat_index(sector_index, is_ceiling)]
 
+# <finished>
 func get_sector_linedef_count(sector_index):
 	if sector_index == -1:
 		return 0
@@ -230,9 +262,11 @@ func get_sector_linedef_count(sector_index):
 		i+=1
 	return count
 
+# <finished>
 func is_sector_degenerative(sector_index):
 	return get_sector_linedef_count(sector_index) < 3
 
+# <almost_finished>
 func load_wad(wad_path, level_name, mode):
 	var buffer
 	var i
@@ -251,7 +285,7 @@ func load_wad(wad_path, level_name, mode):
 	header.dirOffset = file.get_32()
 	
 	if header.type != "IWAD" && header.type != "PWAD":
-		print(wad_path, "is not IWAD or PWAD !")
+		print("ERROR: ",wad_path, "is not IWAD or PWAD !")
 		return
 	print(wad_path," is ", header.type)
 	
@@ -470,42 +504,157 @@ func load_wad(wad_path, level_name, mode):
 #				geometry.end()		
 #			add_child(geometry)
 
-func build_map_geometry():
-	for ld in map.linedefs:
-		var v1 = ld.start_vertex
-		var v2 = ld.end_vertex
-		
-		var vertex1 = map.vertexes[v1]
-		var vertex2 = map.vertexes[v2]
-	
-		var geometry = ImmediateGeometry.new()
-		geometry.material_override = map_material
-		geometry.begin(Mesh.PRIMITIVE_LINES)
-		if ld.type != 0:
-			geometry.set_color(ColorN("yellow"))
-		else:
-			geometry.set_color(ColorN("red"))
-		geometry.add_vertex(Vector3(vertex1.x, 0, vertex1.y))
-		geometry.add_vertex(Vector3(vertex2.x, 0, vertex2.y))
-		geometry.end()			
-		add_child(geometry)
 
+# <unfinished>
 func build_level_geometry():
+	
+	triangulate()
+	finish_triangles()
+	
 	for i in range(map.sectors.size()):
 		build_sector(i)
 	
 	for i in range(map.linedefs.size()):
 		build_wall(i)
 
+# <finished>
+func add_point_to_rect(rect, point):
+	rect.xMin = min(rect.xMin, point.x)
+	rect.yMin = min(rect.yMin, point.y)
+	rect.xMax = max(rect.xMax, point.x)
+	rect.yMax = max(rect.yMax, point.y)
+	return rect
 
+# <finished>
+func get_bbox():
+	var bbox = Bounds.new()
+	bbox.xMin = INF
+	bbox.yMin = INF
+	bbox.xMax = -INF
+	bbox.yMax = -INF
+	
+	for v in map.vertexes:
+		bbox = add_point_to_rect(bbox, v)
+	
+	return bbox
+
+# <finished>
+func get_taper_rect(rect, offset):
+	rect.xMin += offset
+	rect.yMin += offset
+	rect.xMax -= offset
+	rect.yMax -= offset
+	return rect
+
+# <unfinished>
+func triangulate():
+	var bbox = get_bbox()
+	bbox = get_taper_rect(bbox, -500.0)
+	pass
+
+# <unfinished>
+func finish_triangles():
+	pass
+
+# <finished>
 func build_sector(sector_index):
 	if is_sector_degenerative(sector_index):
 		return
 	var sector = map.sectors[sector_index]
-	var triangles = []
-	var indices = []
 	
+	var sector_triangles = []
+	var vertex_indices = []
+	
+	# choose sector triangles
+	for t in triangles:
+		if t.sector == sector_index:
+			sector_triangles.push_back(t)
+			vertex_indices.push_back(t.v1)
+			vertex_indices.push_back(t.v2)
+			vertex_indices.push_back(t.v3)
+	
+	# build sector vertices array
+	var sector_vertices = []
+	for i in range(vertex_indices.size()):
+		sector_vertices.push_back(SHORT2FLOAT * map.vertices[vertex_indices[i]].get_v2())
+	
+	# map triangle indexes from global array to local
+	for i in range(sector_triangles.size()):
+		var t = sector_triangles[i]
+		t.v1 = vertex_indices.find(t.v1)
+		t.v2 = vertex_indices.find(t.v2)
+		t.v3 = vertex_indices.find(t.v3)
+		sector_triangles[i] = t
+	
+	# create floor and ceiling flats
+	build_sector_flat(sector_index, vertex_indices, sector_vertices, sector_triangles, false)
+	build_sector_flat(sector_index, vertex_indices, sector_vertices, sector_triangles, true)
 
+# <unfinished>
+func create_material(texture_name, is_transparent):
+	var material = SpatialMaterial.new()
+	return material
+
+# <unfinished>
+func build_sector_flat(sector_index, vertex_indices, sector_vertices, sector_triangles, is_ceiling):
+	var sector = map.sectors[sector_index]
+	var texture_name = sector.ceil_texture if is_ceiling else sector.floor_texture
+	var is_sky = texture_name == SKYTEXNAME
+	var brightness = sector.light_level / SHORTMAXVALUE
+	var color = Color(brightness, brightness, brightness, 1.0)
+	var uv_tiling = PIXELS_PER_UNIT / PIXELS_PER_FLAT
+	var material = create_material(texture_name, false)
+	var height = SHORT2FLOAT * (sector.ceil_height if is_ceiling else sector.floor_height)
+	var mesh = ImmediateGeometry.new()
+	mesh.name = "sector_" + str(sector_index) + "_" + ("ceiling" if is_ceiling else "floor")
+	
+	var flat_vertices = []
+	var flat_colors = []
+	var flat_triangle_indices = []
+	var flat_uv = []
+	
+	var center = Vector3()
+	for v in sector_vertices:
+		center += Vector3(v.x, 0.0, v.y)
+	center /= float(sector_vertices.size())
+	center.y = height
+	
+	if is_nan(center.x) || is_nan(center.z):
+		pass
+	
+	for v in sector_vertices:
+		flat_vertices.push_back(Vector3(v.x, height, v.y) - center)
+		flat_colors.push_back(color)
+		flat_uv.push_back = v * uv_tiling
+	
+	for i in range(sector_triangles.size()):
+		var t = sector_triangles[i]
+		if is_ceiling:
+			flat_triangle_indices[i * 3] = t.v1
+			flat_triangle_indices[i * 3 + 1] = t.v2
+			flat_triangle_indices[i * 3 + 2] = t.v3
+		else:
+			flat_triangle_indices[i * 3] = t.v1
+			flat_triangle_indices[i * 3 + 1] = t.v3
+			flat_triangle_indices[i * 3 + 2] = t.v2
+	
+	mesh.begin(Mesh.PRIMITIVE_TRIANGLES)
+	for i in range(flat_vertices.size()):
+		mesh.set_color(flat_colors[i])
+		mesh.set_uv(flat_uv[i])
+		mesh.add_vertex(flat_vertices[i])
+	mesh.end()
+	
+	add_child(mesh)
+	
+	var flat_index = get_flat_index(sector_index, is_ceiling)
+	var flat = MapFlat.new()
+	flat.mesh = mesh
+	flat.material = material
+	flats[flat_index] = flat
+	
+	
+# <finished>
 func build_wall(ld_index):
 	
 	var ld = map.linedefs[ld_index]	
@@ -603,6 +752,7 @@ func build_wall(ld_index):
 		build_wall_side(ld.rsidenum, v1, v2, floorh, ceilh, ST_MIDDLE, twoSided, bottomUnpegged, wall, isLeftSide,
 		get_flat(sd.sector, true), get_flat(sd.sector, false))
 
+# <unfinished>
 func build_wall_side(sd_index, v_index1, v_index2, floor_h, ceil_h, type, two_sided, peg_to_bottom, wall, is_left_side, upper_flat, lower_flat):
 	
 	if sd_index == -1:
@@ -612,5 +762,30 @@ func build_wall_side(sd_index, v_index1, v_index2, floor_h, ceil_h, type, two_si
 	var v2 = SHORT2FLOAT * map.vertexes[v_index2].get_v2()
 	var sd = map.sidedefs[sd_index]
 
+# <almost_finished>
+func build_map_geometry():
+	var i = 0
+	var map_spatial = Spatial.new()
+	map_spatial.name = "Map"
+	add_child(map_spatial)
+	for ld in map.linedefs:
+		var v1 = ld.start_vertex
+		var v2 = ld.end_vertex
+		
+		var vertex1 = map.vertexes[v1]
+		var vertex2 = map.vertexes[v2]
+		var geometry = ImmediateGeometry.new()
+		geometry.name = "mapline_" + str(i) 
+		geometry.material_override = map_material
+		geometry.begin(Mesh.PRIMITIVE_LINES)
+		if ld.type != 0:
+			geometry.set_color(ColorN("yellow"))
+		else:
+			geometry.set_color(ColorN("red"))
+		geometry.add_vertex(Vector3(vertex1.x, 0, vertex1.y))
+		geometry.add_vertex(Vector3(vertex2.x, 0, vertex2.y))
+		geometry.end()			
+		map_spatial.add_child(geometry)
+		i+=1
 func _ready():	
 	load_wad(WADPath, LevelName, Mode)
