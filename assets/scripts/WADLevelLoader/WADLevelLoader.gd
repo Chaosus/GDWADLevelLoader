@@ -4,8 +4,7 @@ extends Spatial
 # originally created by Chaosus in 2017-2018
 # MIT license
 
-# If you want to extend this script for your purposes, read
-# http://www.gamers.org/dhs/helpdocs/dmsp1666.html
+# EXPORTS
 
 export(String) var WADPath = "e1m1.wad"
 
@@ -19,132 +18,11 @@ export(float) var Scale = 0.05
 
 export(bool) var PrintDebugInfo = true
 
-class Header:
-	var type
-	var lumpNum
-	var dirOffset
+# CONSTANTS
 
-class Lump:
-	var offset
-	var size
-	var name
+const SHORT2FLOAT = 1.0 / 64.0
 
-class Thing:
-	var x
-	var y
-	var angle
-	var type
-	var options
-
-enum {
-	LDT_IMPASSIBLE,
-	LDT_BLOCK_MONSTERS,
-	LDT_TWO_SIDED
-	LDT_UPPER_UNPEGGED,
-	LDT_LOWER_UNPEGGED,
-	LDT_SECRET,
-	LDT_BLOCK_SOUND,
-	LDT_NOT_ON_MAP,
-	LDT_ALREADY_ON_MAP,
-	LDT_MAX
-}	
-
-class Linedef:
-	var start_vertex = -1
-	var end_vertex = -1
-	var flags = 0
-	var type = 0
-	var trigger = 0
-	var front = -1
-	var back = -1
-
-class Sidedef:
-	var x_offset
-	var y_offset
-	var upper_texture
-	var lower_texture
-	var middle_texture
-	var sector
-
-class Vertex:
-	var x
-	var y
-	
-class Segment:
-	var from
-	var to
-	var angle
-	var linedef
-	var direction
-	var offset
-
-class SubSector:
-	var seg_count
-	var seg_num
-
-class Node:
-	var x
-	var y
-	var dx
-	var dy
-	var y_upper_right
-	var y_lower_right
-	var x_lower_right
-	var x_upper_right
-	var y_upper_left
-	var y_lower_left
-	var x_lower_left
-	var x_upper_left
-	var node_right
-	var node_left
-	
-class Sector:
-	var floor_height = 0
-	var ceil_height = 128
-	var floor_texture = "FLOOR4_8"
-	var ceil_texture = "CEIL3_5"
-	var light_level = 160
-	var special = 0
-	var tag = 0
-	var faceset_floor
-	var faceset_ceil
-	var height
-
-class FacesetSegment:
-	var v1
-	var v2
-	var a
-	var b
-	func _init(p_v1, p_v2, p_a, p_b):
-		v1 = p_v1
-		v2 = p_v2
-		a = p_a
-		b = p_b
-
-class Face:
-	var v1
-	var v2
-	var v3
-	var v4
-	func _init(p_v1,p_v2,p_v3,p_v4):
-		v1 = p_v1
-		v2 = p_v2
-		v3 = p_v3
-		v4 = p_v4
-
-class Faceset:
-	var vertices = []
-	var segments = []
-	var texture = null
-	var faces = []
-	var uv = []
-	func _init(p_texture):
-		texture = p_texture
-	func add_segment(v1, v2, a, b):
-		segments.push_back(FacesetSegment.new(v1, v2, a, b))
-	func add_face(p_face, p_uv):
-		faces.push_back(p_face)
-		uv.push_back(p_uv)
+# I/O methods
 
 func decode_32_as_string(file):
 	var c1 = char(file.get_8())
@@ -179,7 +57,181 @@ func to_short(a, b):
 func combine_8_bytes_to_string(c1, c2, c3, c4, c5, c6, c7, c8):
 	return char(c1) + char(c2) + char(c3) + char(c4) + char(c5) + char(c6) + char(c7) + char(c8)
 
+# EXTRACTED TYPES
 
+class Header:
+	var type
+	var lumpNum
+	var dirOffset
+
+class Lump:
+	var offset
+	var size
+	var name
+
+class Thing:
+	var x
+	var y
+	var angle
+	var type
+	var options
+
+# LINEDEF FLAGS
+enum {
+	LDF_IMPASSIBLE = 1,
+	LDF_BLOCK_MONSTERS = 2,
+	LDF_TWO_SIDED = 4
+	LDF_UPPER_UNPEGGED = 8,
+	LDF_LOWER_UNPEGGED = 16,
+	LDF_SECRET = 32,
+	LDF_BLOCK_SOUND = 64,
+	LDF_NOT_ON_MAP = 128,
+	LDF_ALREADY_ON_MAP = 256
+}	
+
+class Linedef:
+	var start_vertex
+	var end_vertex
+	var flags
+	var type
+	var trigger
+	var rsidenum
+	var lsidenum
+
+class Sidedef:
+	var x_offset
+	var y_offset
+	var upper_texture
+	var lower_texture
+	var middle_texture
+	var sector
+
+class Vertex:
+	var x
+	var y
+	func get_v2():
+		return Vector2(x, y)
+	
+class Segment:
+	var from
+	var to
+	var angle
+	var linedef
+	var direction
+	var offset
+
+class SubSector:
+	var seg_num
+	var seg_first
+
+class Node:
+	var x
+	var y
+	var dx
+	var dy
+	var y_upper_right
+	var y_lower_right
+	var x_lower_right
+	var x_upper_right
+	var y_upper_left
+	var y_lower_left
+	var x_lower_left
+	var x_upper_left
+	var node_right
+	var node_left
+	
+class Sector:
+	var floor_height
+	var ceil_height
+	var floor_texture
+	var ceil_texture
+	var light_level
+	var special
+	var tag
+
+# CUSTOM GEOMETRY TYPES
+
+# SIDE TYPE
+enum {
+	ST_TOP,
+	ST_MIDDLE
+	ST_BOTTOM,
+	ST_MAX
+}
+
+# FLAT TYPE
+enum {
+	FT_FLOOR
+	FT_CEIL,
+	FT_MAX
+}
+
+# Contains all extracted data
+class Map:
+	var things = []
+	var linedefs = []
+	var sidedefs = []
+	var vertexes = []
+	var segments = []
+	var subsectors = []
+	var nodes = []
+	var sectors = []
+
+class MapObject:
+	var mesh
+	var material
+
+class MapSide extends MapObject:
+	var wall = null
+	var upper_flat = null
+	var upper_index1 = -1
+	var upper_index2 = -1
+	var lower_flat = null
+	var lower_index1 = -1
+	var lower_index2 = -1
+	var peg_to_bottom = false
+
+class MapFlat extends MapObject:
+	var sides = []
+	var height
+	var prev_height
+
+class MapWall extends MapObject:
+	var flags
+	var lsides = []
+	var rsides = []
+
+# VARIABLES
+
+var map = null
+var flats = []
+var walls = []
+var map_material
+
+# FUNCTIONS
+
+func get_flat_index(sector_index, is_ceiling):
+	return sector_index * FT_MAX + (FT_CEIL if is_ceiling else FT_FLOOR)
+
+func get_flat(sector_index, is_ceiling):
+	return flats[get_flat_index(sector_index, is_ceiling)]
+
+func get_sector_linedef_count(sector_index):
+	if sector_index == -1:
+		return 0
+	var count = 0
+	var i = 0
+	while i < map.linedefs.size():
+		var ld = map.linedefs[i]
+		var rsector = map.sidedefs[ld.rsidenum].sector if ld.rsidenum != -1 else -1
+		var lsector = map.sidedefs[ld.lsidenum].sector if ld.lsidenum != -1 else -1
+		if rsector == sector_index || lsector == sector_index:
+			count+=1
+		i+=1
+	return count
+
+func is_sector_degenerative(sector_index):
+	return get_sector_linedef_count(sector_index) < 3
 
 func load_wad(wad_path, level_name, mode):
 	var buffer
@@ -198,7 +250,12 @@ func load_wad(wad_path, level_name, mode):
 	header.lumpNum = file.get_32()
 	header.dirOffset = file.get_32()
 	
+	if header.type != "IWAD" && header.type != "PWAD":
+		print(wad_path, "is not IWAD or PWAD !")
+		return
 	print(wad_path," is ", header.type)
+	
+	map = Map.new()
 	
 	if PrintDebugInfo:
 		print("READING LUMPS...")
@@ -228,7 +285,7 @@ func load_wad(wad_path, level_name, mode):
 			lump_mapname = lump
 			first = false
 		var name = lump.name
-		print(name)
+		#print(name)
 		match lump.name:
 			"THINGS":
 				lump_things = lump
@@ -250,7 +307,8 @@ func load_wad(wad_path, level_name, mode):
 				lump_reject = lump
 			"BLOCKMAP":
 				lump_blockmap = lump
-				lumps_readed = true
+				if breakAfter:
+					lumps_readed = true
 			level_name:
 				breakAfter = true
 	if PrintDebugInfo:
@@ -259,7 +317,6 @@ func load_wad(wad_path, level_name, mode):
 	if PrintDebugInfo:
 		print("READING THINGS...")
 	file.seek(lump_things.offset)
-	var things = []
 	buffer = file.get_buffer(lump_things.size)
 	i = 0
 	while i < buffer.size():
@@ -269,13 +326,12 @@ func load_wad(wad_path, level_name, mode):
 		thing.angle = to_short(buffer[i+4], buffer[i+5])
 		thing.type = to_short(buffer[i+6], buffer[i+7])
 		thing.options = to_short(buffer[i+8], buffer[i+9])
-		things.push_back(thing)
+		map.things.push_back(thing)
 		i+=10
 		
 	if PrintDebugInfo:
 		print("READING LINEDEFS...")
 	file.seek(lump_linedefs.offset)
-	var linedefs = []
 	buffer = file.get_buffer(lump_linedefs.size)
 	i = 0
 	while i < buffer.size():
@@ -285,15 +341,14 @@ func load_wad(wad_path, level_name, mode):
 		linedef.flags = to_short(buffer[i+4],buffer[i+5])
 		linedef.type = to_short(buffer[i+6],buffer[i+7])
 		linedef.trigger = to_short(buffer[i+8],buffer[i+9])
-		linedef.front = to_short(buffer[i+10],buffer[i+11])
-		linedef.back = to_short(buffer[i+12],buffer[i+13])
-		linedefs.push_back(linedef)
+		linedef.rsidenum = to_short(buffer[i+10],buffer[i+11])
+		linedef.lsidenum = to_short(buffer[i+12],buffer[i+13])
+		map.linedefs.push_back(linedef)
 		i+=14
 	
 	if PrintDebugInfo:
 		print("READING SIDEDEFS...")
 	file.seek(lump_sidedefs.offset)
-	var sidedefs = []
 	buffer = file.get_buffer(lump_sidedefs.size)
 	i = 0
 	while i < buffer.size():
@@ -304,13 +359,12 @@ func load_wad(wad_path, level_name, mode):
 		sidedef.lower_texture = combine_8_bytes_to_string(buffer[i+12], buffer[i+13], buffer[i+14], buffer[i+15], buffer[i+16], buffer[i+17], buffer[i+18], buffer[i+19])
 		sidedef.middle_texture = combine_8_bytes_to_string(buffer[i+20], buffer[i+21], buffer[i+22], buffer[i+23], buffer[i+24], buffer[i+25], buffer[i+26], buffer[i+27])
 		sidedef.sector = to_short(buffer[i+28], buffer[i+29])
-		sidedefs.push_back(sidedef)
+		map.sidedefs.push_back(sidedef)
 		i+=30
 		
 	if PrintDebugInfo:
 		print("READING VERTEXES...")
 	file.seek(lump_vertexes.offset)
-	var vertexes = []
 	buffer = file.get_buffer(lump_vertexes.size)
 	i = 0
 	while i < buffer.size():
@@ -319,26 +373,24 @@ func load_wad(wad_path, level_name, mode):
 		var vertex = Vertex.new()
 		vertex.x = float(x)
 		vertex.y = float(y)	
-		vertexes.push_back(vertex)
+		map.vertexes.push_back(vertex)
 		i+=4
 	
 	if PrintDebugInfo:
 		print("READING SUB-SECTORS...")
 	file.seek(lump_subsectors.offset)
-	var sub_sectors = []
 	buffer = file.get_buffer(lump_subsectors.size)
 	i = 0
 	while i < buffer.size():
 		var subsector = SubSector.new()
-		subsector.seg_count = to_short(buffer[i],buffer[i+1])
-		subsector.seg_num = to_short(buffer[i+2],buffer[i+3])
-		sub_sectors.push_back(subsector)
+		subsector.seg_num = to_short(buffer[i],buffer[i+1])
+		subsector.seg_first = to_short(buffer[i+2],buffer[i+3])
+		map.subsectors.push_back(subsector)
 		i+=4
 	
 	if PrintDebugInfo:
 		print("READING NODES...")
 	file.seek(lump_nodes.offset)
-	var nodes = []
 	buffer = file.get_buffer(lump_nodes.size)
 	i = 0
 	while i < buffer.size():
@@ -357,13 +409,12 @@ func load_wad(wad_path, level_name, mode):
 		node.x_upper_left = to_short(buffer[i+22],buffer[i+23])
 		node.node_right = to_short(buffer[i+24],buffer[i+25])
 		node.node_left = to_short(buffer[i+26],buffer[i+27])
-		nodes.push_back(node)
+		map.nodes.push_back(node)
 		i+=28
 	
 	if PrintDebugInfo:
 		print("READING SECTORS...")
 	file.seek(lump_sectors.offset)
-	var sectors = []
 	buffer = file.get_buffer(lump_sectors.size)
 	i = 0
 	while i < buffer.size():
@@ -375,121 +426,191 @@ func load_wad(wad_path, level_name, mode):
 		sector.light_level = to_short(buffer[i+20], buffer[i+21])
 		sector.special = to_short(buffer[i+22], buffer[i+23])
 		sector.tag = to_short(buffer[i+24], buffer[i+25])
-		sector.faceset_floor = Faceset.new(sector.floor_texture)
-		sector.faceset_ceil = Faceset.new(sector.ceil_texture)
-		sectors.push_back(sector)
+		map.sectors.push_back(sector)
 		i+=26
 	file.close()
 	
 	if PrintDebugInfo:
-		print("PREPARING GEOMETRY")
-	i = 1
-	var polygons = []
-	var polyvertexes = []
+		print("BUILDING GEOMETRY")
 	
-	var MapMaterial = SpatialMaterial.new()
-	MapMaterial.flags_unshaded = true
-	MapMaterial.flags_vertex_lighting = true
-	MapMaterial.vertex_color_use_as_albedo = true
+	map_material = SpatialMaterial.new()
+	map_material.flags_unshaded = true
+	map_material.flags_vertex_lighting = true
+	map_material.vertex_color_use_as_albedo = true
 	
-	for ld in linedefs:	
-		
-		var vertex1 = vertexes[ld.start_vertex]
-		var vertex2 = vertexes[ld.end_vertex]
-		
-		if mode == 0 or mode == 2: # Map mode or Overlay mode
-			var geometry = ImmediateGeometry.new()
-			geometry.material_override = MapMaterial
-			geometry.begin(Mesh.PRIMITIVE_LINES)
-			if ld.type != 0:
-				geometry.set_color(Color(1,1,0))
-			else:
-				geometry.set_color(Color(1,0,0))
-			geometry.add_vertex(Vector3(vertex1.x,0,vertex1.y))
-			geometry.add_vertex(Vector3(vertex2.x,0,vertex2.y))
-			geometry.end()			
-			add_child(geometry)
-			
-		if mode == 1 or mode == 2: # Geometry mode or Overlay mode
-		
-			var width = sqrt((vertex1.x-vertex2.x)*(vertex1.x-vertex2.x) + (vertex1.y-vertex2.y)*(vertex1.y-vertex2.y))
-			
-			if ld.front != -1:
-				var side1 = sidedefs[ld.front]
-				var sector1 = sectors[side1.sector]
+	flats.resize(map.sectors.size() * 2)
+	walls.resize(map.linedefs.size())
+	
+	match mode:
+		0:
+			build_map_geometry()
+		1:
+			build_level_geometry()
+		2:
+			build_map_geometry()
+			build_level_geometry()
 				
-				var front_lower_left = i
-				var front_upper_left = i+1
-				var front_lower_right = i+2
-				var front_upper_right = i+3
-				
-				polyvertexes.push_back(Vector3(vertex1.x, sector1.floor_height, vertex1.y)) # lower left
-				polyvertexes.push_back(Vector3(vertex1.x, sector1.ceil_height, vertex1.y)) # upper left
-				polyvertexes.push_back(Vector3(vertex2.x, sector1.floor_height, vertex2.y)) # lower right
-				polyvertexes.push_back(Vector3(vertex2.x, sector1.ceil_height, vertex2.y)) # upper right
+#	if mode == 1 or mode == 2: # Geometry mode or Overlay mode	
+#		var polycount = polygons.size()
+#		for sector in sectors:
+#			var geometry = ImmediateGeometry.new()
+#			geometry.material_override = DefaultWallMaterial
+#			for s in sector.faceset_floor.segments:
+#				geometry.begin(Mesh.PRIMITIVE_TRIANGLE_STRIP)
+#				geometry.set_color(Color(1,1,1))
+#				var height = sector.floor_height / 3 # (sector.ceil_height - sector.floor_height) / 10
+#				geometry.set_uv(Vector2(0,0))
+#				geometry.add_vertex(Vector3(s.v1.x, 0, s.v1.y))
+#				geometry.set_uv(Vector2(1,0))
+#				geometry.add_vertex(Vector3(s.v2.x, 0, s.v2.y))
+#				geometry.set_uv(Vector2(0,1))
+#				geometry.add_vertex(Vector3(s.v1.x, height, s.v1.y))			
+#				geometry.set_uv(Vector2(1,1))
+#				geometry.add_vertex(Vector3(s.v2.x, height, s.v2.y))
+#				geometry.end()		
+#			add_child(geometry)
 
-				if ld.flags != LDT_TWO_SIDED and side1.middle_texture != '-':
-					polygons.push_back(create_poly(ld, side1, sector1, width, 
-					front_lower_left, front_lower_right,
-					front_upper_right, front_upper_left))
-					
-				sector1.faceset_floor.add_segment(vertex1, vertex2, front_lower_left, front_lower_right)
-				sector1.faceset_ceil.add_segment(vertex2, vertex1, front_upper_right, front_upper_left)
-				
-				i+=4
-				
-			if ld.back != -1:
-				var side2 = sidedefs[ld.back]
-				var sector2 = sectors[side2.sector]
-				
-				var back_lower_left = i
-				var back_upper_left = i+1
-				var back_lower_right = i+2
-				var back_upper_right = i+3	
-				
-				polyvertexes.push_back(Vector3(vertex1.x, sector2.floor_height, vertex1.y)) # lower left
-				polyvertexes.push_back(Vector3(vertex1.x, sector2.ceil_height, vertex1.y)) # upper left
-				polyvertexes.push_back(Vector3(vertex2.x, sector2.floor_height, vertex2.y)) # lower right
-				polyvertexes.push_back(Vector3(vertex2.x, sector2.ceil_height, vertex2.y)) # upper right
-				
-				if ld.flags != LDT_TWO_SIDED and side2.middle_texture != '-':
-					polygons.push_back(create_poly(ld, side2, sector2, width, 
-					back_lower_left, back_lower_right,
-					back_upper_right, back_upper_left))
-				
-				sector2.faceset_floor.add_segment(vertex2, vertex1, back_lower_right, back_lower_left)
-				sector2.faceset_ceil.add_segment(vertex1, vertex2, back_upper_left, back_upper_right)
-				
-				i+=4
-			#if ld.front != -1 and ld.back != -1 and ld.flags == LDT_TWO_SIDED:
-			#	pass
-				
-	if mode == 1 or mode == 2: # Geometry mode or Overlay mode	
-		var polycount = polygons.size()
-		for sector in sectors:
-			var geometry = ImmediateGeometry.new()
-			geometry.material_override = DefaultWallMaterial
-			for s in sector.faceset_ceil.segments:
-				geometry.begin(Mesh.PRIMITIVE_TRIANGLE_STRIP)
-				geometry.set_color(Color(1,1,1))
-				var height = sector.floor_height / 3 # (sector.ceil_height - sector.floor_height) / 10
-				geometry.set_uv(Vector2(0,0))
-				geometry.add_vertex(Vector3(s.v2.x, 0, s.v2.y))
-				geometry.set_uv(Vector2(1,0))
-				geometry.add_vertex(Vector3(s.v1.x, 0, s.v1.y))
-				geometry.set_uv(Vector2(0,1))
-				geometry.add_vertex(Vector3(s.v2.x, height, s.v2.y))			
-				geometry.set_uv(Vector2(1,1))
-				geometry.add_vertex(Vector3(s.v1.x, height, s.v1.y))
-				geometry.end()		
-			add_child(geometry)
+func build_map_geometry():
+	for ld in map.linedefs:
+		var v1 = ld.start_vertex
+		var v2 = ld.end_vertex
+		
+		var vertex1 = map.vertexes[v1]
+		var vertex2 = map.vertexes[v2]
+	
+		var geometry = ImmediateGeometry.new()
+		geometry.material_override = map_material
+		geometry.begin(Mesh.PRIMITIVE_LINES)
+		if ld.type != 0:
+			geometry.set_color(ColorN("yellow"))
+		else:
+			geometry.set_color(ColorN("red"))
+		geometry.add_vertex(Vector3(vertex1.x, 0, vertex1.y))
+		geometry.add_vertex(Vector3(vertex2.x, 0, vertex2.y))
+		geometry.end()			
+		add_child(geometry)
 
-func create_poly(linedef, side, sector, width, lower_left, lower_right, upper_right, upper_left):
-	var polygon = Faceset.new(side.middle_texture)
-	var height = sector.ceil_height - sector.floor_height
-	sector.height = height / 1000.0
-	polygon.add_face(Face.new(lower_left, lower_right, upper_right, upper_left), Vector2(0,0))
-	return polygon
+func build_level_geometry():
+	for i in range(map.sectors.size()):
+		build_sector(i)
+	
+	for i in range(map.linedefs.size()):
+		build_wall(i)
+
+
+func build_sector(sector_index):
+	if is_sector_degenerative(sector_index):
+		return
+	var sector = map.sectors[sector_index]
+	var triangles = []
+	var indices = []
+	
+
+func build_wall(ld_index):
+	
+	var ld = map.linedefs[ld_index]	
+		
+	var v1 = ld.start_vertex
+	var v2 = ld.end_vertex
+		
+	var twoSided = ld.flags & LDF_TWO_SIDED
+	var topUnpegged = ld.flags & LDF_UPPER_UNPEGGED
+	var bottomUnpegged = ld.flags & LDF_LOWER_UNPEGGED
+	
+	var wall = MapWall.new()
+	wall.flags = ld.flags
+	
+	if twoSided:		
+		var rsd = map.sidedefs[ld.rsidenum]
+		var lsd = map.sidedefs[ld.lsidenum]
+		
+		var rs = map.sectors[rsd.sector]
+		var ls = map.sectors[lsd.sector]
+		
+		var rfloorh = SHORT2FLOAT * rs.floor_height
+		var rceilh = SHORT2FLOAT * rs.ceil_height
+		
+		var lfloorh = SHORT2FLOAT * ls.floor_height
+		var lceilh = SHORT2FLOAT * ls.ceil_height
+	
+		var upperFloor = get_flat(lsd.sector, false) if rfloorh < lfloorh else get_flat(rsd.sector, false)
+		var lowerCeiling = get_flat(lsd.sector, true) if lceilh < rceilh else get_flat(rsd.sector, true)
+		
+		# VALIDATE SIDEDEF TEXTURES
+		
+		if rfloorh != lfloorh:
+			if rsd.lower_texture == "-":
+				rsd.lower_texture = lsd.lower_texture
+			elif lsd.lower_texture == "-":
+				lsd.lower_texture = rsd.lower_texture
+		
+		if rceilh != lceilh:
+			if rsd.upper_texture == "-":
+				rsd.upper_texture = lsd.upper_texture
+			elif lsd.upper_texture == "-":
+				lsd.upper_texture = rsd.upper_texture
+		
+		# TOP WALL
+		
+		if rceilh > lceilh:
+			build_wall_side(ld.rsidenum, ld.start_vertex, ld.end_vertex, 
+			lceilh, rceilh,
+			ST_TOP, twoSided, !topUnpegged, wall, false,
+			get_flat(rsd.sector, true), get_flat(lsd.sector, true))
+		elif lceilh > rceilh:
+			build_wall_side(ld.lsidenum, ld.end_vertex, ld.start_vertex,
+			rceilh, lceilh,
+			ST_TOP, twoSided, !topUnpegged, wall, true,
+			get_flat(lsd.sector, true), get_flat(rsd.sector, true))
+			
+		# MIDDLE WALL
+		
+		if rsd.middle_texture != "-":
+			build_wall_side(ld.rsidenum, ld.start_vertex, ld.end_vertex,
+			upperFloor.height, lowerCeiling.height, ST_MIDDLE, twoSided, bottomUnpegged,
+			wall, false, lowerCeiling, upperFloor)
+		
+		if lsd.middle_texture != "-":
+			build_wall_side(ld.lsidenum, ld.end_vertex, ld.start_vertex,
+			upperFloor.height, lowerCeiling.height, ST_MIDDLE, twoSided, bottomUnpegged,
+			wall, true, lowerCeiling, upperFloor)
+		
+		# BOTTOM WALL
+			if rfloorh < lfloorh:
+				build_wall_side(ld.rsidenum, ld.start_vertex, ld.end_vertex,
+				rfloorh, lfloorh, ST_BOTTOM, twoSided, bottomUnpegged, wall, false,
+				get_flat(lsd.sector, false), get_flat(rsd.sector, false))
+			elif lfloorh < rfloorh:
+				build_wall_side(ld.lsidenum, ld.end_vertex, ld.start_vertex,
+				lfloorh, rfloorh, ST_BOTTOM, twoSided, bottomUnpegged, wall, true,
+				get_flat(rsd.sector, false), get_flat(lsd.sector, false))
+	else: # ONE_SIDED
+		var isLeftSide = false
+		var sd_index = ld.rsidenum
+		if sd_index == -1:
+			isLeftSide = true
+			sd_index =ld.lsidenum
+			# SWAP
+			var temp = v1
+			v1 = v2
+			v2 = temp
+		var sd = map.sidedefs[sd_index]
+		var s  = map.sectors[sd.sector]
+		
+		var floorh = SHORT2FLOAT * s.floor_height
+		var ceilh = SHORT2FLOAT * s.ceil_height
+		
+		build_wall_side(ld.rsidenum, v1, v2, floorh, ceilh, ST_MIDDLE, twoSided, bottomUnpegged, wall, isLeftSide,
+		get_flat(sd.sector, true), get_flat(sd.sector, false))
+
+func build_wall_side(sd_index, v_index1, v_index2, floor_h, ceil_h, type, two_sided, peg_to_bottom, wall, is_left_side, upper_flat, lower_flat):
+	
+	if sd_index == -1:
+		return
+		
+	var v1 = SHORT2FLOAT * map.vertexes[v_index1].get_v2()
+	var v2 = SHORT2FLOAT * map.vertexes[v_index2].get_v2()
+	var sd = map.sidedefs[sd_index]
 
 func _ready():	
 	load_wad(WADPath, LevelName, Mode)
