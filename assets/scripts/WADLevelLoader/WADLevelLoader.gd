@@ -546,14 +546,152 @@ func get_taper_rect(rect, offset):
 	rect.yMax -= offset
 	return rect
 
+class LinedefResult:
+	var index
+	var left_side
+
+func find_linedef_by_vertices(v1, v2):
+	var result = LinedefResult.new()
+	result.index = -1
+	for i in range(map.linedefs.size()):
+		var ld = map.linedefs[i]
+		if ld.start_vertex == v1 && ld.end_vertex == v2:
+			result.left_side = true
+			result.index = i
+			return result
+		if ld.start_vertex == v2 && ld.end_vertex == v1:
+			result.left_side = false
+			result.index = i
+	return result
+	
+
 # <unfinished>
 func triangulate():
 	var bbox = get_bbox()
-	bbox = get_taper_rect(bbox, -500.0)
-	pass
+	bbox = get_taper_rect(bbox, -500.0)	
 
+# <finished>
+func get_sector_by_linedef(ld_index, left_side, only_non_degenerative):
+	if ld_index == -1:
+		return -1
+	
+	var ld = map.linedefs[ld_index]
+	var sidedef_index = ld.lsidenum if left_side else ld.rsidenum
+	
+	if sidedef_index == -1:
+		return -1
+		
+	var sector_index = map.sidedefs[sidedef_index].sector
+	if sector_index == -1:
+		return -1
+	
+	if only_non_degenerative:
+		if is_sector_degenerative(sector_index):
+			return -1
+	
+	return sector_index
+
+# <finished>
+func get_sector_by_triangle(triangle):
+	var sector_index = 0
+	sector_index = get_sector_by_linedef(triangle.ld3, triangle.leftside3, true)
+	if sector_index != -1:
+		return sector_index
+	
+	sector_index = get_sector_by_linedef(triangle.ld2, triangle.leftside2, true );
+	if sector_index != -1:
+		return sector_index;
+	
+	sector_index = get_sector_by_linedef(triangle.ld1, triangle.leftside1, true );
+	if sector_index != -1:
+		return sector_index;
+	
+	return -1
+
+# <finished>
+func find_triangle_by_vertices(triangle_indices, v1, v2):
+	for i in triangle_indices:
+		var t = triangles[i]
+		
+		# CW winding
+		if (t.v1 == v1 && t.v2 == v2) || (t.v2 == v1 && t.v3 == v2) || (t.v3 == v1 && t.v1 == v2):
+			return i
+		
+		# CCW winding
+		if (t.v1 == v2 && t.v2 == v1) || (t.v2 == v2 && t.v3 == v1) || (t.v3 == v2 && t.v1 == v1):
+			return i
+	return -1
+
+# <need_test>
+func find_sector_by_triangle(triangle_index):
+	var availablelist = []
+	var checklist = []
+	
+	for i in range(triangles.size()):
+		if i != triangle_index:
+			availablelist.push_back(i)
+	
+	checklist.push_back(triangle_index)
+	
+	var max_iterations = 32
+	var iteration = 0
+	
+	while availablelist.size() > 0:
+		for i in checklist:
+			var t = triangles[i]
+			if t.has_ld():
+				return get_sector_by_triangle(t)
+	
+		var neightbourlist = [] # to PoolIntArray
+		for i in checklist:
+			var t = triangles[i]
+			for j in range(3):
+				var index1 = t.v1 if j == 0 else t.v2 if j == 1 else t.v3
+				var index2 = t.v2 if j == 0 else t.v3 if j == 1 else t.v1
+				var n = find_triangle_by_vertices(availablelist, index1, index2)
+				if n != -1:
+					neightbourlist.push_back(n)
+					availablelist.remove(n)
+		checklist = neightbourlist
+		iteration+=1
+		if iteration >= max_iterations:
+			break
+	
+	return -1
+	
 # <unfinished>
 func finish_triangles():
+	
+#	for i in range(0, map.linedefs.size()): # pointSet.Triangles[ i ];
+#		var ld = map.linedefs[i]
+#		var triangle = MapTriangle.new()
+#
+#		triangle.v1 = 0
+#		triangle.v2 = 0
+#		triangle.v3 = 0
+#
+#		var ld1 = find_linedef_by_vertices(triangle.v1, triangle.v2)
+#		var ld2 = find_linedef_by_vertices(triangle.v2, triangle.v3)
+#		var ld3 = find_linedef_by_vertices(triangle.v3, triangle.v1)
+#
+#		triangle.ld1 = ld1.index
+#		triangle.ld2 = ld2.index
+#		triangle.ld3 = ld3.index
+#
+#		triangle.leftside1 = ld1.left_side
+#		triangle.leftside2 = ld2.left_side
+#		triangle.leftside3 = ld3.left_side
+#
+#		triangle.sector = get_sector_by_triangle(triangle)
+#		triangles.push_back(triangle)
+#		print(str(i))
+	
+	for i in range(triangles.size()):
+		var t = triangles[i]
+		if t.sector == -1:
+			t.sector = find_sector_by_triangle(i)
+			triangles[i] = t
+			
 	pass
 
 # <finished>
