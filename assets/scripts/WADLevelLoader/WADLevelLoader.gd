@@ -294,6 +294,20 @@ class Triangulation:
 			print("second while loop exceeded limit! Sector: ", sector, " Lines left: ", lines.size())
 		
 		return output
+	
+	func point_on_line(a, b, c):
+		return abs(line_angle(a, b) - line_angle(b, c)) < 0.05
+	
+	func clean_lines(polygon):
+		var before  = polygon.size()
+		for i in range(polygon.size()):
+			var p1 = polygon[i]
+			var p2 = polygon[(i+1) % polygon.size()]
+			var p3 = polygon[(i+2) % polygon.size()]
+			if point_on_line(p1, p2, p3):
+				polygon.remove((i+1) % polygon.size())
+				i-=1
+		return polygon
 		
 	func triangulate(sector):
 		var polygons = trace_lines(sector)
@@ -301,7 +315,8 @@ class Triangulation:
 		if polygons == null:
 			return null
 		
-		print("SUCCESS !")
+		for p in polygons:
+			p = clean_lines(p)
 		
 		return polygons
 
@@ -566,9 +581,15 @@ class SectorPolygon:
 
 # <unfinished>
 func build_level_geometry():
+	var st = Triangulation.new(map)
+	var failed_sectors = 0
+	
 	for i in range(map.sectors.size()):	
-		var st = Triangulation.new(map)
-		st.triangulate(i)
+		var polygons = st.triangulate(i)
+		if polygons == null:
+			failed_sectors+=1
+	
+	return failed_sectors
 		
 # <unfinished>
 func create_material(texture_name, is_transparent):
