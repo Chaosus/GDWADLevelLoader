@@ -170,24 +170,174 @@ class Map:
 
 # CUSTOM GEOMETRY TYPES
 
-class Triangulation:
+
+
+class SectorPolygon:
+	var points = []
+	var triangles = []
+	
+	func get_offset_triangles(offset):
+		var output = []
+		for t in triangles:
+			output.append(t + offset)
+		return output
+	
+	func points_to_v3(z):
+		var vectors = []
+		for p in points:
+			vectors.append(Vector3(p.x, z, p.y))
+		return vectors
+
+
+
+class SectorTriangulation:
 	var map
+	
+	class SectorIsland:
+		var shell = PoolVector2Array()
+		var holes = []
+		
+		func order_holes():
+			var ordered_holes = []
+			var hole_value = []
+			for i in range(holes.size()):
+				hole_value.append(holes[i][rightmost_vertex(holes[i])].x)
+			while holes.size() > 1:
+				var high_index = 0
+				for i in range(1, holes.size()):
+					if hole_value[i] > hole_value[high_index]:
+						high_index = i
+				order_holes().append(holes[high_index])
+				holes.remove(high_index)
+				hole_value.remove(high_index)
+			ordered_holes.append(holes[0])
+			holes = ordered_holes
+		
+		func rightmost_vertex(polygon):
+			var output = 0
+			for i in range(polygon.size()):
+				if polygon[i].x > polygon[output].x:
+					output = i
+			return output
+		
+		func ccw(a, b, c):
+			return (c.y - a.y) * (b.x - a.x) > (b.y - a.y) * (c.x - a.x)
+	
+		func line_intersect(a, b, c, d):
+			return (ccw(a, c, d) != ccw(b, c, d)) && (ccw(a, b, c) != ccw(a, b, d))
+		
+		func is_clockwise(polygon):
+			var count = 0.0
+			for i in range(polygon.size()):
+				var i2 = (i+1) % polygon.size()
+				count += polygon[i].x * polygon[i2].y - polygon[i2].x * polygon[i].y
+			return count <= 0.0
+		
+		func find_intersection(p1, p2, p3, p4):
+			var dx12 = p2.x - p1.x
+			var dy12 = p2.y - p1.y
+			var dx34 = p4.x - p3.x
+			var dy34 = p4.y - p3.y
+			var denominator = dy12 * dx34 - dx12 * dy34
+			var t1 = ((p1.x - p3.x) * dy34 + (p3.y - p1.y) * dx34) / denominator
+			return Vector2(p1.x + dx12 * t1, p1.y + dy12 * t1)
+		
+		func cut():
+			if holes.empty():
+				return shell
+			order_holes()
+			var safe = 100
+			while holes.size() > 0 and safe >= 0:
+				safe-=1
+				var hole = holes[0]
+				var r_index = rightmost_vertex(hole)
+				var h_point = hole[r_index]
+				var hx_point = Vector2(h_point.x + 10000.0, h_point.y)
+				var closest_line = -1
+				
+				var min_dist = 100000.0
+				var dist = 0.0
+				var close_point = Vector2()
+				for j in range(shell.size()):
+					var j2 = (j + 1) % shell.size()
+					
+					if shell[j].x > h_point.x or shell[j2].x > h_point.x:
+						if shell[j].y == h_point.y:
+							dist = shell[j].distance(h_point)
+							if dist < min_dist:
+								min_dist = dist
+								closest_line = j
+								close_point = shell[j]
+					if lines_intersect(h_point, hx_point, shell[j], shell[j2]):
+						var inter = find_intersection(h_point, hx_point, shell[j], shell[j2])
+						dist = inter.distance(h_point)
+						if dist < min_dist:
+							min_dist = dist
+							closest_line = j
+							close_point = inter
+			
+				if closest_line == -1:
+					return null
+				try_cut(closest_line, r_index)
+			if safe <= 0:
+				return null
+			return shell
+		
+
+		
+		func try_cut(closest_line, hole_point_index):
+			var shell_point = shell[closest_line]
+			for j in range(shell.size()):
+				var j2 = (j + 1) % shell.size()
+				if shell[j] != shell[closest_line] and shell[j2] != shell[closest_line]:
+					if line_intersect(shell[j], shell[j2], holes[0][hole_point_index], shell_point):
+						try_cut(j if shell[j].x > shell[j2].x else j2, hole_point_index)
+						return
+			make_cut(closest_line, hole_point_index)
+		
+		func make_cut(shell_point_index, hole_point_index):
+			if is_clockwise(holes[0]) == is_clockwise(shell):
+				holes[0].invert()
+				hole_point_index = holes[0].size() - (hole_point_index + 1)
+			var sp = Vector2(shell[shell_point_index].x, shell[shell_point_index].y)
+			for i in range(holes[0].size()):
+				shell.insert(shell_point_index + i, holes[0][(i + hole_point_index) % holes[0].size()])
+			shell.insert(shell_point_index + holes[0].size(), holes[0][hole_point_index])
+			shell.insert(shell_point_index, sp)
+			holes.remove(0)
+			
 	func _init(p_map):
 		map = p_map
 		
 	func get_sector_sidedefs(sector):
 		var output = []
-		for sd in map.sidedefs:
-			if sd.sector == sector:
-				output.append(sd)
-		return output
 		
+		for i in range(map.sidedefs.size()):
+			if map.sidedefs[i].sector == sector:
+				output.append(i)
+				
+		return output
+	
+	func is_clockwise(polygon):
+		var count = 0.0
+		for i in range(polygon.size()):
+			var i2 = (i+1) % polygon.size()
+			count += polygon[i].x * polygon[i2].y - polygon[i2].x * polygon[i].y
+		return count <= 0.0
+	
+	func ccw(a, b, c):
+			return (c.y - a.y) * (b.x - a.x) > (b.y - a.y) * (c.x - a.x)
+	
+	func line_intersect(a, b, c, d):
+		return (ccw(a, c, d) != ccw(b, c, d)) && (ccw(a, b, c) != ccw(a, b, d))
+	
 	func get_sector_linedefs(sector):
 		var output = []
 		var sidedefs = get_sector_sidedefs(sector)
 		
 		for ld in map.linedefs:
 			if sidedefs.has(ld.front) or sidedefs.has(ld.back):
+
 				var fs = map.sidedefs[ld.front].sector
 				var bs
 				if ld.back != 0xFFFF:
@@ -246,10 +396,11 @@ class Triangulation:
 			var next = line.end
 			
 			safe2 = 1000
-			while trace[0] != next && safe2 > 0:
+			while trace[0] != next and safe2 > 0:
 				safe2-=1
 				var connected_lines = PoolIntArray()
 				var connected_line_front = PoolByteArray()
+				i = 0
 				for line in lines:
 					if line.start == next:
 						connected_lines.append(i)
@@ -257,12 +408,13 @@ class Triangulation:
 					elif line.end == next:
 						connected_lines.append(i)
 						connected_line_front.append(0)
+					i+=1
 				
 				if connected_lines.size() == 1:
 					trace.append(next)
 					next = lines[connected_lines[0]].end if connected_line_front[0] == 1 else lines[connected_lines[0]].start
 					lines.remove(abs(connected_lines[0]))
-				else:
+				elif connected_lines.size() > 1:
 					var v1 = vertex_to_v2(trace[trace.size()-1])
 					var v2 = vertex_to_v2(next)
 					var point_index = lines[connected_lines[0]].end if connected_line_front[0] == 1 else lines[connected_lines[0]].start
@@ -270,8 +422,8 @@ class Triangulation:
 					var min_angle = abs(line_angle(v1, v2) - line_angle(v3, v2))
 					var min_index = 0
 					i = 1
-					for i in range(1, connected_lines.size()):
-						point_index = lines[connected_lines[i]].end if connected_line_front[i] else lines[connected_lines[i]].start
+					for t in range(1, connected_lines.size()):
+						point_index = lines[connected_lines[i]].end if connected_line_front[i] == 1 else lines[connected_lines[i]].start
 						v3 = vertex_to_v2(point_index)
 						var new_angle = abs(line_angle(v1, v2) - line_angle(v3, v2))
 						if new_angle < min_angle:
@@ -300,25 +452,256 @@ class Triangulation:
 	
 	func clean_lines(polygon):
 		var before  = polygon.size()
-		for i in range(polygon.size()):
+		var i = 0
+		while i < polygon.size():
 			var p1 = polygon[i]
 			var p2 = polygon[(i+1) % polygon.size()]
 			var p3 = polygon[(i+2) % polygon.size()]
 			if point_on_line(p1, p2, p3):
 				polygon.remove((i+1) % polygon.size())
 				i-=1
+			i+=1
 		return polygon
+	
+	func is_clockwise_v(a, b, c):
+		var count = 0.0
+		count += (b.x - a.x) * (b.y * a.y)
+		count += (c.x - b.x) * (c.y * b.y)
+		count += (a.x - c.x) * (a.y - c.y)
+		return count > 0
 		
+	#point_in_polygon(v[polygon[j]].get_v2(), test_poly):
+		
+	func point_in_polygon(point, polygon, ignore_connections = false):
+		var crosses = 0
+		
+		if ignore_connections:
+			for v in polygon:
+				if point == v:
+					return false
+		
+		var v = map.vertexes
+			
+		var left_point = Vector2(point.x - 10000.0, point.y)
+		for i in range(polygon.size()):
+			var i2 = (i + 1) % polygon.size()
+			
+			if line_intersect(left_point, point, polygon[i], polygon[i2]):
+				crosses += 1
+		
+		return crosses % 2 == 1
+	
+	func build_islands(polygons):
+		var output = []
+		for p in polygons:
+			if is_clockwise(p):
+				p.invert()
+		
+		if polygons.size() == 1:
+			var ssi = SectorIsland.new()
+			ssi.shell = polygons[0]
+			output.append(ssi)
+			return output
+			
+		var si = SectorIsland.new()
+		si.shell = polygons[0]
+		polygons.remove(0)
+		output.append(si)
+		
+		var safe = 10000
+		while polygons.size() > 0 && safe >= 0:
+			safe-=1
+			var done = false
+			
+			for i in range(output.size()):
+				if point_in_polygon(polygons[0][0], output[i].shell, true):
+					output[i].holes.append(polygons[0])
+					polygons.remove(0)
+					done = true
+				elif output[i].holes.size() == 0:
+					if point_in_polygon(output[i].shell[0], polygons[0], true):
+						output[i].holes.append(output[i].shell)
+						output[i].shell = polygons[0]
+						polygons.remove(0)
+						done = true
+				if polygons.empty():
+					break
+			
+			if done == false:
+				si = SectorIsland.new()
+				si.shell = polygons[0]
+				output.append(si)
+				polygons.remove(0)
+		
+		if safe <= 0:
+			print("BuildIslands: While loop broke safety check!")
+		
+		return output
+	
+	func cross_length(ax, ay, bx, by, cx, cy):
+		var bax = ax - bx
+		var bay = ay - by
+		var bcx = cx - bx
+		var bcy = cy - by
+		return bax * bcy - bay * bcx
+	
+	func is_convex(points):
+		var got_negative = false
+		var got_positive = false
+		var num_points = points.size()
+		var verts = PoolVector2Array()
+		for i in points:
+			verts.append(map.vertexes[i].get_v2())
+		var b = 0
+		var c = 0
+		for a in range(num_points):
+			b =  (a + 1) % num_points
+			c = (b + 1) % num_points
+			var cross_product = cross_length(verts[a].x, verts[a].y, verts[b].x, verts[b].y, verts[c].x, verts[c].y)
+			if cross_product < 0:
+				got_negative = true
+			elif cross_product > 0:
+				got_positive = true
+			if got_negative and got_positive:
+				return 0
+		if got_positive:
+			return 1
+		return -1
+	
+	func line_intersect2(list, p_a, p_b, p_c, p_d):
+		var a = list[p_a % list.size()].get_v2()
+		var b = list[p_b % list.size()].get_v2()
+		var c = list[p_c % list.size()].get_v2()
+		var d = list[p_d % list.size()].get_v2()
+		if point_on_line(a, c, b):
+			return true
+		if point_on_line(a, d, b):
+			return true
+		return (ccw(a, c, d) != ccw(b, c, d) && ccw(a, b, c) != ccw(a, b, d))
+	
+	func ear_clip(polygon):
+		var output = SectorPolygon.new()
+		
+		var v = map.vertexes
+		var verts = []
+		for i in polygon:
+			verts.append(v[i])
+		
+		var conv = is_convex(polygon)
+		
+		if conv != 0:
+			if conv == -1:
+				polygon.invert()
+				
+			output.points = verts
+			
+			for t in range(polygon.size()-2):
+				output.triangles.append(0)
+				output.triangles.append(t+1)
+				output.triangles.append(t+2)			
+			return output
+				
+		var clipped_indexes = []
+		var polygon_count = polygon.size()
+		var i = 0
+		var i1 = 0
+		var i2 = 0
+		var i3 = 0
+		var safe = 5000
+		while clipped_indexes.size() < polygon_count - 2 and safe >= 0:
+			i1 = i % polygon_count
+			while clipped_indexes.has(i1):
+				i1 = (i1 + 1) % polygon_count
+			i2 = (i1 + 1) % polygon_count
+			while clipped_indexes.has(i2) or i2 == i1:
+				i2 = (i2 + 1) % polygon_count
+			i3 = (i2 + 1) % polygon_count
+			while clipped_indexes.has(i3) or i3 == i2:
+				i3 = (i3 + 1) % polygon_count
+			var clipped = false
+			var intersects = false
+			var straight_line = false
+			if point_on_line(v[polygon[i1]].get_v2(), v[polygon[i2]].get_v2(), v[polygon[i3]].get_v2()):
+				straight_line = true
+			if straight_line == false:
+				for j in range(polygon_count):
+					var j1 = (j + 1) % polygon_count
+					if v[polygon[i1]].get_v2() != v[polygon[j]].get_v2()  and v[polygon[i3]].get_v2()  != v[polygon[j]].get_v2():
+						if line_intersect2(verts, i1, i3, j, j1) and v[polygon[i1]].get_v2() != v[polygon[j1]].get_v2() and v[polygon[i3]].get_v2() != v[polygon[j1]].get_v2():
+							intersects = true
+							break
+						
+						var test_poly = PoolVector2Array()					
+						test_poly.append(v[polygon[i1]].get_v2())
+						test_poly.append(v[polygon[i2]].get_v2())
+						test_poly.append(v[polygon[i3]].get_v2())
+						
+						if v[polygon[i2]].get_v2() != v[polygon[j]].get_v2() and point_in_polygon(v[polygon[j]].get_v2(), test_poly):
+							intersects = true
+							break
+			if intersects == false and straight_line == false:
+				var mid_point = Vector2((v[polygon[i3]].x + v[polygon[i1]].x) / 2.0, (v[polygon[i3]].y + v[polygon[i1]].y) / 2.0)
+				if point_in_polygon(mid_point, verts):
+					clipped_indexes.append(i2)
+					output.triangles.append(i1)
+					output.triangles.append(i2)
+					output.triangles.append(i3)
+					clipped = true
+			if clipped == false:
+				i+=1
+				safe-=1
+		
+		if not is_clockwise(verts):
+			output.triangles.invert()
+		
+		output.points = verts
+		
+		if safe <= 0:
+			pass
+		
+		return output
+	
 	func triangulate(sector):
+		
+		var output = []
+		
 		var polygons = trace_lines(sector)
 		
-		if polygons == null:
+		if !polygons:
 			return null
 		
 		for p in polygons:
-			p = clean_lines(p)
+			var vertexes = Geometry.triangulate_polygon(p)
+			var sp = ear_clip(vertexes)
+			if sp != null:
+				output.append(sp)
+			
 		
-		return polygons
+#		var polygons = trace_lines(sector)
+#
+#		if polygons == null:
+#			return null
+#
+#		for p in polygons:
+#			p = clean_lines(p)
+#
+#		if polygons.size() == 0:
+#			return null
+#
+#		var islands = build_islands(polygons)
+#
+#		var cut_polygons = []
+#		for i in islands:
+#			var cut = i.cut()
+#			if cut != null:
+#				cut_polygons.append(cut)
+#
+#		for p in cut_polygons:
+#			var sp = ear_clip(p)
+#			if sp != null:
+#				output.append(sp)
+		
+		return output
 
 # VARIABLES
 
@@ -326,6 +709,39 @@ var map = null
 var map_material
 
 # FUNCTIONS
+
+func build_sector(index):
+	var st = SectorTriangulation.new(map)	
+	
+	var polygons = st.triangulate(index)
+	if polygons == null:
+		return null
+	
+	var floor_height = map.sectors[index].floor_height
+	var ceil_height = map.sectors[index].ceil_height
+	var light_level = map.sectors[index].light_level / 256.0
+	
+	for i in range(polygons.size()):
+		var mesh = ImmediateGeometry.new()
+		mesh.material_override = create_material(null, false)
+		var vertices = polygons[i].points_to_v3(floor_height)
+		var tris = polygons[i].triangles
+		var uvs = polygons[i].points
+		
+		#for j in range(uvs.size()):
+		#	uvs[j] /= 64.0
+		
+		mesh.begin(Mesh.PRIMITIVE_TRIANGLES)
+		
+		for v in vertices:
+			mesh.add_vertex(v)
+		
+		mesh.end()
+		add_child(mesh)
+
+func build_sectors():
+	for i in range(map.sectors.size()):
+		build_sector(i)
 
 # <almost_finished>
 func load_wad(wad_path, level_name, mode):
@@ -561,41 +977,16 @@ func load_wad(wad_path, level_name, mode):
 #				geometry.add_vertex(Vector3(s.v2.x, height, s.v2.y))
 #				geometry.end()		
 #			add_child(geometry)
-
-
-class SectorPolygon:
-	var points = []
-	var triangles = []
-	
-	func get_offset_triangles(offset):
-		var output = []
-		for t in triangles:
-			output.append(t + offset)
-		return output
-	
-	func points_to_v3(z):
-		var vectors = []
-		for p in points:
-			vectors.append(Vector3(p.x, z, p.y))
-		return vectors
-
-# <unfinished>
-func build_level_geometry():
-	var st = Triangulation.new(map)
-	var failed_sectors = 0
-	
-	for i in range(map.sectors.size()):	
-		var polygons = st.triangulate(i)
-		if polygons == null:
-			failed_sectors+=1
-	
-	return failed_sectors
 		
 # <unfinished>
 func create_material(texture_name, is_transparent):
 	var material = SpatialMaterial.new()
 	return material
 
+# <unfinished>
+func build_level_geometry():
+	build_sectors()
+	
 # <almost_finished>
 func build_map_geometry():
 	var i = 0
